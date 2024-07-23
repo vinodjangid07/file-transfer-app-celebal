@@ -6,46 +6,41 @@ const AppContext = createContext();
 const socket = io('http://localhost:5000');
 
 const AppProvider = ({ children }) => {
-    const [roomId, setRoomId] = useState();
-    const [value, setValue] = useState('');
+    const [roomId, setRoomId] = useState('');
+    const [enteredRoomId, setEnteredRoomId] = useState('');
     const [isConnected, setIsConnected] = useState(false);
+    const [receivedFiles, setReceivedFiles] = useState([]);
+    const [uploadStatus, setUploadStatus] = useState('');
 
-    const handleonClick = () => {
-        let Id = Math.floor(100000 + Math.random() * 900000).toString();
-        setRoomId(Id);
-        console.log('Created Room ID:', Id);
+    const handleCreateRoom = () => {
+        const newRoomId = Math.floor(100000 + Math.random() * 900000).toString();
+        setRoomId(newRoomId);
+        socket.emit('createRoom', newRoomId);
+        console.log('Created Room ID:', newRoomId);
     }
 
-    const onchange = (e) => {
-        setValue(e.target.value);
+    const handleEnterRoomId = (e) => {
+        setEnteredRoomId(e.target.value);
+        console.log('Entered Room ID:', e.target.value);
     }
 
     const handleConnect = () => {
-        console.log('Connecting with Room ID:', value, 'Current Room ID:', roomId);
-        if (value === roomId) {
-            setIsConnected(true);
-            console.log("Connected");
-            socket.emit('joinRoom', roomId);
-        } else {
-            console.log("Room ID does not match");
-        }
+        console.log('Connecting with Room ID:', enteredRoomId);
+        socket.emit('joinRoom', enteredRoomId);
     }
 
     const handleFileUpload = (file) => {
-        if (isConnected) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const data = {
-                    roomId,
-                    file: e.target.result,
-                    fileName: file.name
-                };
-                socket.emit('file', data);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const data = {
+                roomId: roomId || enteredRoomId,
+                file: e.target.result,
+                fileName: file.name
             };
-            reader.readAsDataURL(file);
-        } else {
-            console.log("Not connected to a room");
-        }
+            socket.emit('file', data);
+            setUploadStatus('Upload successful');
+        };
+        reader.readAsDataURL(file);
     }
 
     useEffect(() => {
@@ -55,21 +50,37 @@ const AppProvider = ({ children }) => {
 
         socket.on('disconnect', () => {
             console.log('Disconnected from server');
+            setIsConnected(false);
+        });
+
+        socket.on('userJoined', (joinedRoomId) => {
+            console.log(`User joined room: ${joinedRoomId}`);
+            setIsConnected(true);
+            if (!roomId) {
+                setRoomId(joinedRoomId);
+            }
         });
 
         socket.on('file', (data) => {
+            setReceivedFiles((prevFiles) => [...prevFiles, data]);
             console.log('Received file:', data);
+        });
+
+        socket.on('error', (message) => {
+            console.error(message);
         });
 
         return () => {
             socket.off('connect');
             socket.off('disconnect');
+            socket.off('userJoined');
             socket.off('file');
+            socket.off('error');
         };
-    }, []);
+    }, [roomId, enteredRoomId]);
 
     return (
-        <AppContext.Provider value={{ roomId, handleonClick, onchange, value, handleConnect, isConnected, handleFileUpload }}>
+        <AppContext.Provider value={{ roomId, handleCreateRoom, handleEnterRoomId, enteredRoomId, handleConnect, isConnected, handleFileUpload, receivedFiles, uploadStatus }}>
             {children}
         </AppContext.Provider>
     )
